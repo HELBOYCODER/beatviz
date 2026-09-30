@@ -2,7 +2,7 @@
   "name": "beatviz",
   "productName": "BeatViz",
   "version": "1.0.0",
-  "description": "50-template music visualizer for musicians | ویژوالایزر موزیک با ۵۰ قالب",
+  "description": "50-template music visualizer for musicians | \u0648\u06cc\u0698\u0648\u0627\u0644\u0627\u06cc\u0632\u0631 \u0645\u0648\u0632\u06cc\u06a9 \u0628\u0627 \u06f5\u06f0 \u0642\u0627\u0644\u0628",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -16,14 +16,49 @@
   "build": {
     "appId": "center.akira.beatviz",
     "productName": "BeatViz",
-    "directories": { "output": "dist" },
-    "files": ["main.js", "app_ui.html", "app_server.py", "beatviz.py", "midilib.py", "looks.py", "looks_music.py", "templates_pack1.py", "templates_pack2.py", "backend_env/**"],
-    "mac": {
-      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
-      "category": "public.app-category.music",
-      "icon": "icon.icns"
+    "directories": {
+      "output": "dist"
     },
-    "win": { "target": "nsis" },
-    "linux": { "target": "AppImage" }
+    "files": [
+      "main.js",
+      "app_ui.html",
+      "app_server.py",
+      "beatviz.py",
+      "midilib.py",
+      "looks.py",
+      "looks_music.py",
+      "templates_pack1.py",
+      "templates_pack2.py",
+      "backend_env/**"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.music",
+      "icon": "icon.icns",
+      "extraResources": [
+        {
+          "from": "cli/beatviz-cli",
+          "to": "cli/beatviz-cli"
+        },
+        {
+          "from": "cli/README-cli.md",
+          "to": "cli/README-cli.md"
+        }
+      ]
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }

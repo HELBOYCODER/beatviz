@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# BeatViz CLI — ships inside the macOS app bundle.
+# Usage after installing BeatViz.app:
+#   /Applications/BeatViz.app/Contents/Resources/cli/beatviz-cli <audio> --look <name> ...
+# Or install a global shortcut:
+#   sudo ln -sf "/Applications/BeatViz.app/Contents/Resources/cli/beatviz-cli" /usr/local/bin/beatviz
+RES="$(cd "$(dirname "$0")/.." && pwd)"          # .../BeatViz.app/Contents/Resources
+PY="$RES/backend_env/bin/python"
+if [ ! -x "$PY" ]; then PY="$(command -v python3)"; fi
+exec "$PY" "$RES/beatviz.py" "$@"

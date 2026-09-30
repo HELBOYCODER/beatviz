@@ -1,0 +1,112 @@
+name: Build Desktop Apps
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Bundle a self-contained Python (with Pillow) that ships inside the .app
+      - name: Bundle Python backend
+        run: |
+          python3 -m venv backend_env
+          ./backend_env/bin/pip install --upgrade pip pillow
+          # strip caches to shrink the bundle
+          rm -rf backend_env/lib/python3.12/site-packages/pip
+          find backend_env -type d -name '__pycache__' -exec rm -rf {} + || true
+
+      - name: Install deps
+        run: |
+          brew install ffmpeg
+          npm install
+
+      # ffmpeg static binary into resources so the app is self-contained
+      - name: Bundle ffmpeg
+        run: |
+          curl -L -o ffmpeg.zip https://evermeet.cx/ffmpeg/getrelease/zip
+          unzip -o ffmpeg.zip -d backend_env/bin
+          chmod +x backend_env/bin/ffmpeg
+
+      - name: Build macOS app + DMG
+        run: npx electron-builder --mac --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeatViz-macOS
+          path: dist/*.dmg
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Bundle Python backend
+        shell: bash
+        run: |
+          python -m venv backend_env
+          ./backend_env/Scripts/pip install --upgrade pip pillow
+      - name: Bundle ffmpeg
+        shell: bash
+        run: |
+          curl -L -o ffmpeg.zip https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+          unzip -o ffmpeg.zip
+          FFDIR=$(ls -d ffmpeg-*-essentials_build | head -1)
+          mkdir -p backend_env/Scripts
+          cp $FFDIR/bin/ffmpeg.exe backend_env/Scripts/
+      - run: npm install
+      - name: Build Windows installer
+        run: npx electron-builder --win --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BeatViz-Windows
+          path: dist/*.exe
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg python3-venv
+      - name: Bundle Python backend
+        run: |
+          python3 -m venv backend_env
+          ./backend_env/bin/pip install --upgrade pip pillow
+      - run: npm install
+      - run: npx electron-builder --linux --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BeatViz-Linux
+          path: dist/*.AppImage

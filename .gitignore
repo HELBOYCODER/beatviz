@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+node_modules/
+dist/
+build/
+out/
+*.mp4
+*.wav
+*.mp3
+frame_*.png
+fb.png
+.env

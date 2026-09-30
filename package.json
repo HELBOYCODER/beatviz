@@ -1,0 +1,29 @@
+{
+  "name": "beatviz",
+  "productName": "BeatViz",
+  "version": "1.0.0",
+  "description": "50-template music visualizer for musicians | ویژوالایزر موزیک با ۵۰ قالب",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac",
+    "dist": "electron-builder --mac --win --linux"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "center.akira.beatviz",
+    "productName": "BeatViz",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "app_ui.html", "app_server.py", "beatviz.py", "midilib.py", "looks.py", "looks_music.py", "templates_pack1.py", "templates_pack2.py", "backend_env/**"],
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "category": "public.app-category.music",
+      "icon": "icon.icns"
+    },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage" }
+  }
+}

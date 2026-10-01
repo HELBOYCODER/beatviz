@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>BeatViz</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b27; --accent:#00f5d4; --accent2:#aa3cdc; --text:#e8e8f0; --dim:#8a8fa3; }
+  * { margin:0; padding:0; box-sizing:border-box; font-family:'Vazirmatn',-apple-system,'Segoe UI',sans-serif; -webkit-tap-highlight-color:transparent; }
+  body { background:var(--bg); color:var(--text); height:100vh; height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
+  header { padding:12px 16px; display:flex; align-items:center; gap:10px; border-bottom:1px solid #222839; flex-shrink:0; }
+  header h1 { font-size:18px; background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  header .badge { font-size:10px; color:var(--dim); border:1px solid #2a3040; padding:3px 8px; border-radius:99px; }
+  #stage { flex:1; position:relative; background:#080a10; min-height:120px; }
+  canvas { width:100%; height:100%; display:block; }
+  #panel { border-top:1px solid #222839; padding:12px 14px 20px; display:flex; flex-direction:column; gap:10px; flex-shrink:0; max-height:52vh; overflow-y:auto; }
+  select { width:100%; background:var(--panel); color:var(--text); border:1px solid #2a3040; border-radius:10px; padding:10px 12px; font-size:13px; }
+  label { font-size:11px; color:var(--dim); }
+  .row { display:flex; gap:8px; }
+  .row > div { flex:1; }
+  input[type=number] { width:100%; background:var(--panel); color:var(--text); border:1px solid #2a3040; border-radius:8px; padding:8px; font-size:13px; }
+  button { background:var(--panel); color:var(--text); border:1px solid #2a3040; border-radius:10px; padding:10px; font-size:13px; cursor:pointer; }
+  button.go { background:linear-gradient(90deg,var(--accent),var(--accent2)); color:#04101c; font-weight:700; border:0; border-radius:12px; padding:13px; font-size:15px; }
+  button.go:disabled { opacity:.4; cursor:default; }
+  button:disabled { opacity:.4; }
+  #prog { height:8px; background:#222839; border-radius:99px; overflow:hidden; display:none; }
+  #prog > div { height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width .3s; }
+  #status { font-size:12px; color:var(--dim); text-align:center; }
+  #file { display:none; }
+  video { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BeatViz</h1>
+  <span style="flex:1"></span>
+  <span class="badge" id="count"></span>
+  <span class="badge">Android</span>
+</header>
+<div id="stage"><canvas id="cv"></canvas></div>
+<div id="panel">
+  <button id="pick">🎵 انتخاب آهنگ (MP3 / WAV)</button>
+  <div>
+    <label>قالب</label><br><br>
+    <select id="lookSel"></select>
+  </div>
+  <div class="row">
+    <div><label>مدت (ثانیه)</label><br><input type="number" id="dur" value="15" min="3" max="120"></div>
+    <div><label>عرض</label><br><input type="number" id="w" value="1080"></div>
+    <div><label>ارتفاع</label><br><input type="number" id="h" value="1920"></div>
+  </div>
+  <button class="go" id="go" disabled>✨ ساخت ویدیو</button>
+  <div id="prog"><div></div></div>
+  <div id="status">آهنگ را انتخاب کن</div>
+  <video id="vid"></video>
+</div>
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

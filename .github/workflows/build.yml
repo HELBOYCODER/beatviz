@@ -10,9 +10,54 @@ on:
   workflow_dispatch:
 
 jobs:
-  macos:
-    runs-on: macos-latest
+  android:
+    runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Generate keystore
+        working-directory: android
+        run: |
+          if [ ! -f app/release.keystore ]; then
+            keytool -genkeypair -v -keystore app/release.keystore -alias beatviz \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass beatviz -keypass beatviz \
+              -dname "CN=BeatViz, OU=BeatViz, O=BeatViz, L=Net, ST=Net, C=US"
+          fi
+
+      - name: Build release APK
+        working-directory: android
+        run: |
+          chmod +x gradlew || true
+          if [ ! -f gradlew ]; then
+            curl -sL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o gradle.zip
+            unzip -q gradle.zip
+            ./gradle-8.7/bin/gradle wrapper --gradle-version 8.7
+          fi
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeatViz-Android
+          path: android/app/build/outputs/apk/release/*.apk
+
+      - name: Release APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/app/build/outputs/apk/release/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  macos:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5

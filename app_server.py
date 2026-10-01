@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """BeatViz app backend: local HTTP server + render engine for the Electron UI.
 
+v1.4.0: lag-free engine (precomputed spectrum, streamed frames — no PNG files),
+multi-format export, full-song beatmaps, start/end trimming.
+
 Endpoints:
-  GET  /            -> app UI
-  GET  /api/looks   -> JSON list of all templates
-  POST /api/render  -> {audio_b64, look, duration, width, height} -> {job_id}
-  GET  /api/job/<id>-> {status, progress, video}
-  GET  /video/<name>-> rendered mp4
+  GET  /              -> app UI
+  GET  /api/looks     -> JSON list of all templates
+  POST /api/render    -> {audio_b64, audio_name, look, duration, width, height,
+                          fps, preset, format, start, end, auto_trim} -> {job_id}
+  GET  /api/job/<id>  -> {status, progress, video, beatmap}
+  GET  /video/<name>  -> rendered file
 """
 import base64
 import json
@@ -17,68 +21,52 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import midilib
+import beatmap as beatmap_mod
+import beatviz
 import looks as looks_mod
 import looks_music
+import looks_graph
 import templates_pack1
 import templates_pack2
 
 ALL_LOOKS = {}
-for mod in (looks_mod, looks_music, templates_pack1, templates_pack2):
-    for k, v in mod.LOOKS.items():
-        ALL_LOOKS[k] = v
+for mod in (looks_mod, looks_music, looks_graph, templates_pack1, templates_pack2):
+    ALL_LOOKS.update(mod.LOOKS)
 
 JOBS = {}
 OUT_DIR = os.path.join(tempfile.gettempdir(), "beatviz_out")
 os.makedirs(OUT_DIR, exist_ok=True)
 UI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_ui.html")
 
+_CTYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".gif": "image/gif",
+           ".webp": "image/webp", ".zip": "application/zip"}
 
-def run_render(job_id, audio_path, look, duration, width, height):
+
+def run_render(job_id, audio_path, opts):
     try:
-        import wave
-        import math
-        import struct
-        import subprocess
-        from PIL import Image
-
         JOBS[job_id]["status"] = "analyzing"
-        # reuse beatviz.analyze via import
-        import importlib
-        bv = importlib.import_module("beatviz")
-        energies, sr, mono = bv.analyze_audio(audio_path, 30)
-        beats = set(bv.detect_beats(energies, 30))
-        meta = bv.parse_filename_meta(audio_path)
-        bpm = meta["bpm"] or bv.estimate_bpm(sorted(beats), 30)
-
-        midi = None
-        midi_path = audio_path.rsplit(".", 1)[0] + ".mid"
-        if os.path.exists(midi_path):
-            midi = midilib.MidiFile(midi_path)
-
-        fn = ALL_LOOKS[look]
-        frames_dir = tempfile.mkdtemp(prefix="bv_")
-        total = min(int(duration * 30), len(energies))
-        flash = 0.0
-        for i in range(total):
-            flash = 1.0 if i in beats else max(0.0, flash - 0.15)
-            ctx = looks_mod.Ctx(width, height, i / 30,
-                                energies[i] if i < len(energies) else 0.0,
-                                flash, midi, [])
-            ctx.mono, ctx.sr, ctx.bpm, ctx.duration = mono, sr, bpm, duration
-            fn(ctx).save(f"{frames_dir}/f{i:05d}.png")
-            if i % 30 == 0:
-                JOBS[job_id]["progress"] = round(30 + 60 * i / max(1, total))
-        out = os.path.join(OUT_DIR, f"{job_id}.mp4")
-        subprocess.run([
-            "ffmpeg", "-y", "-v", "error", "-framerate", "30",
-            "-i", f"{frames_dir}/f%05d.png", "-i", audio_path,
-            "-t", str(duration), "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            "-r", "30", "-c:a", "aac", "-shortest", out], check=True)
-        for f in os.listdir(frames_dir):
-            os.unlink(os.path.join(frames_dir, f))
-        os.rmdir(frames_dir)
-        JOBS[job_id].update(status="done", progress=100, video=os.path.basename(out))
+        bm = beatmap_mod.load_beatmap(audio_path, int(opts.get("fps", 30)))
+        JOBS[job_id]["beatmap"] = {
+            "bpm": bm.get("bpm"), "duration": bm.get("duration"),
+            "beats": len(bm.get("beats", [])), "sections": bm.get("sections", []),
+        }
+        JOBS[job_id]["status"] = "rendering"
+        t0 = time.time()
+        out, n = beatviz.render_segment(
+            audio_path, opts["look"], os.path.join(OUT_DIR, job_id),
+            duration=float(opts.get("duration", 15)),
+            width=int(opts.get("width", 1920)),
+            height=int(opts.get("height", 1080)),
+            fps=int(opts.get("fps", 30)),
+            preset=opts.get("preset", "quality"),
+            fmt=opts.get("format", "mp4"),
+            start=float(opts.get("start", 0.0)),
+            end=opts.get("end"),
+            auto_trim=bool(opts.get("auto_trim")),
+            beatmap=bm, quiet=True)
+        JOBS[job_id].update(status="done", progress=100,
+                            video=os.path.basename(out), frames=n,
+                            render_seconds=round(time.time() - t0, 1))
     except Exception as e:
         JOBS[job_id].update(status="error", error=str(e))
 
@@ -96,7 +84,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path in ("/", "/index.html"):
-            body = open(UI_PATH, "rb").read()
+            with open(UI_PATH, "rb") as f:
+                body = f.read()
             self._send(200, body, "text/html; charset=utf-8")
         elif self.path == "/api/looks":
             items = []
@@ -115,8 +104,10 @@ class Handler(BaseHTTPRequestHandler):
             name = os.path.basename(self.path)
             p = os.path.join(OUT_DIR, name)
             if os.path.exists(p):
-                body = open(p, "rb").read()
-                self._send(200, body, "video/mp4")
+                ctype = _CTYPES.get(os.path.splitext(name)[1], "application/octet-stream")
+                with open(p, "rb") as f:
+                    body = f.read()
+                self._send(200, body, ctype)
             else:
                 self._send(404, b"{}")
         else:
@@ -128,16 +119,13 @@ class Handler(BaseHTTPRequestHandler):
             req = json.loads(self.rfile.read(ln))
             jid = uuid.uuid4().hex[:10]
             audio = base64.b64decode(req["audio_b64"])
-            ext = ".wav" if req.get("audio_name", "").endswith(".wav") else ".mp3"
+            ext = os.path.splitext(req.get("audio_name", "in.wav"))[1].lower() or ".wav"
             ap = os.path.join(OUT_DIR, f"in_{jid}{ext}")
-            open(ap, "wb").write(audio)
+            with open(ap, "wb") as f:
+                f.write(audio)
+            req["duration"] = min(float(req.get("duration", 15)), 600)
             JOBS[jid] = {"status": "queued", "progress": 5}
-            threading.Thread(target=run_render,
-                             args=(jid, ap, req["look"],
-                                   min(float(req.get("duration", 15)), 300),
-                                   int(req.get("width", 1920)),
-                                   int(req.get("height", 1080))),
-                             daemon=True).start()
+            threading.Thread(target=run_render, args=(jid, ap, req), daemon=True).start()
             self._send(200, json.dumps({"job_id": jid}).encode())
         else:
             self._send(404, b"{}")

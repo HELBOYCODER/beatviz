@@ -11,6 +11,26 @@ try:
 except ImportError:
     import midilib
 
+import numpy as np
+
+# ---- precomputed spectrum cache (v1.4 lag fix) ----
+# The render loop assigns SPEC_MAT (frames x 48 numpy matrix), SPEC_SR, SPEC_FPS
+# once before rendering; spectrum_at() then becomes a cheap row lookup instead
+# of a pure-Python 2048-point FFT per look per frame.
+SPEC_MAT = None
+SPEC_SR = None
+SPEC_FPS = None
+
+
+def set_spectrum_matrix(mat, sr, fps):
+    global SPEC_MAT, SPEC_SR, SPEC_FPS
+    SPEC_MAT, SPEC_SR, SPEC_FPS = mat, sr, fps
+
+
+def clear_spectrum_matrix():
+    global SPEC_MAT
+    SPEC_MAT = None
+
 LINE_COLORS = [
     (229, 72, 77), (62, 99, 221), (18, 165, 148), (247, 107, 21),
     (231, 165, 0), (103, 148, 54), (143, 143, 143), (190, 60, 190),
@@ -67,7 +87,18 @@ def _fft(x):
 
 
 def spectrum_at(mono, sr, t, nbands=48, window=2048):
-    """Return nbands normalized magnitudes (log-spaced, 40Hz..12kHz) at time t."""
+    """Return nbands normalized magnitudes (log-spaced, 40Hz..12kHz) at time t.
+
+    Fast path: uses the precomputed SPEC_MAT matrix (numpy FFT, single analysis
+    pass before rendering). Fallback: pure-Python FFT (kept for standalone use).
+    """
+    if SPEC_MAT is not None and SPEC_FPS and abs(sr - SPEC_SR) < 1:
+        i = min(int(t * SPEC_FPS), len(SPEC_MAT) - 1)
+        row = SPEC_MAT[max(0, i)]
+        if nbands == SPEC_MAT.shape[1]:
+            return [float(v) for v in row]
+        idx = np.linspace(0, SPEC_MAT.shape[1] - 1, nbands)
+        return [float(row[int(round(k))]) for k in idx]
     c = int(t * sr)
     half = window // 2
     seg = mono[max(0, c - half): c + half]
@@ -91,13 +122,22 @@ def spectrum_at(mono, sr, t, nbands=48, window=2048):
     return [min(1.0, v / peak) for v in bands]
 
 
+_FONT_CACHE = {}
+
+
 def _font(idx, size):
+    key = (idx, size)
+    f = _FONT_CACHE.get(key)
+    if f is not None:
+        return f
     paths = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
              "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"]
     try:
-        return ImageFont.truetype(paths[idx], size)
+        f = ImageFont.truetype(paths[idx], size)
     except Exception:
-        return ImageFont.load_default()
+        f = ImageFont.load_default()
+    _FONT_CACHE[key] = f
+    return f
 
 
 from PIL import ImageFont

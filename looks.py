@@ -11,11 +11,20 @@ FONT_PATHS = [
 ]
 
 
+_FONT_CACHE = {}
+
+
 def _font(path_idx=0, size=40):
+    key = (path_idx, size)
+    f = _FONT_CACHE.get(key)
+    if f is not None:
+        return f
     try:
-        return ImageFont.truetype(FONT_PATHS[path_idx], size)
+        f = ImageFont.truetype(FONT_PATHS[path_idx], size)
     except Exception:
-        return ImageFont.load_default()
+        f = ImageFont.load_default()
+    _FONT_CACHE[key] = f
+    return f
 
 
 LINE_COLORS = [

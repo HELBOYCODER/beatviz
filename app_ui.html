@@ -2,7 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>BeatViz — ویژوالایزر موزیک</title>
+<title>BeatViz Studio — ویژوالایزر موزیک</title>
 <style>
   :root { --bg:#0d1117; --panel:#161b27; --accent:#00f5d4; --accent2:#aa3cdc; --text:#e8e8f0; --dim:#8a8fa3; }
   * { margin:0; padding:0; box-sizing:border-box; font-family:'Vazirmatn',-apple-system,'Segoe UI',sans-serif; }
@@ -11,8 +11,8 @@
   header h1 { font-size:20px; background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
   header .badge { font-size:11px; color:var(--dim); border:1px solid #2a3040; padding:3px 10px; border-radius:99px; }
   main { flex:1; display:flex; overflow:hidden; }
-  #left { width:340px; padding:22px; border-left:1px solid #222839; display:flex; flex-direction:column; gap:14px; }
-  #stage { flex:1; display:flex; align-items:center; justify-content:center; background:#080a10; position:relative; }
+  #left { width:340px; padding:22px; border-left:1px solid #222839; display:flex; flex-direction:column; gap:14px; overflow-y:auto; }
+  #stage { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#080a10; position:relative; }
   .drop { border:2px dashed #2a3040; border-radius:16px; padding:26px; text-align:center; cursor:pointer; transition:.2s; }
   .drop:hover,.drop.over { border-color:var(--accent); background:#0f1520; }
   .drop p { color:var(--dim); font-size:13px; margin-top:6px; }
@@ -33,15 +33,23 @@
   .tile h3 { font-size:13px; margin-bottom:6px; direction:ltr; text-align:left; color:var(--accent); }
   .tile p { font-size:11px; color:var(--dim); line-height:1.6; }
   .grp { grid-column:1/-1; font-size:12px; color:var(--accent2); margin-top:8px; font-weight:700; }
-  video { max-width:92%; max-height:92%; border-radius:12px; background:#000; }
+  video { max-width:92%; max-height:78%; border-radius:12px; background:#000; }
   #hint { position:absolute; bottom:14px; color:var(--dim); font-size:12px; }
+  /* ---- v1.4 timeline editor (Instagram-style) ---- */
+  #timeline { width:92%; margin-top:14px; user-select:none; }
+  #wave { width:100%; height:64px; display:block; background:#10141f; border:1px solid #232a3a; border-radius:10px; cursor:crosshair; }
+  #trimInfo { display:flex; justify-content:space-between; font-size:11px; color:var(--dim); margin-top:4px; direction:ltr; }
+  #trimInfo b { color:var(--accent); font-weight:600; }
+  .chk { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text); cursor:pointer; }
+  #songMeta { font-size:11px; color:var(--dim); direction:ltr; text-align:left; }
+  #songMeta b { color:var(--accent); }
 </style>
 </head>
 <body>
 <header>
-  <h1>BeatViz</h1><span class="badge" id="count"></span>
+  <h1>BeatViz Studio</h1><span class="badge" id="count"></span>
   <span style="flex:1"></span>
-  <span class="badge">۵۰ قالب · خروجی Full HD</span>
+  <span class="badge">v1.4 · تایم‌لاین · چندفرمته · Full HD</span>
 </header>
 <main>
   <div id="left">
@@ -50,15 +58,44 @@
       <p>یا کلیک کن — MP3 / WAV</p>
       <input type="file" id="file" accept="audio/*" hidden>
     </div>
+    <div id="songMeta" style="display:none"></div>
     <div>
       <label>قالب</label><br><br>
       <select id="lookSel"></select>
     </div>
+    <!-- Instagram-style trim timeline -->
+    <div id="timeline" style="display:none">
+      <label>تایم‌لاین — بازه را انتخاب کن</label><br>
+      <canvas id="wave" width="600" height="64"></canvas>
+      <div id="trimInfo">
+        <span>شروع <b id="tStart">0:00.0</b></span>
+        <span>پایان <b id="tEnd">0:15.0</b></span>
+        <span>طول <b id="tLen">15.0s</b></span>
+      </div>
+    </div>
     <div class="row">
-      <div><label>مدت (ثانیه)</label><br><input type="number" id="dur" value="15" min="3" max="300"></div>
       <div><label>عرض</label><br><input type="number" id="w" value="1920"></div>
       <div><label>ارتفاع</label><br><input type="number" id="h" value="1080"></div>
+      <div><label>FPS</label><br><input type="number" id="fps" value="30" min="15" max="60" step="15"></div>
     </div>
+    <div class="row">
+      <div><label>فرمت خروجی</label><br>
+        <select id="fmt">
+          <option value="mp4">MP4 (H.264)</option>
+          <option value="h265">MP4 (H.265/HEVC)</option>
+          <option value="webm">WebM (VP9)</option>
+          <option value="gif">GIF</option>
+          <option value="webp">WebP متحرک</option>
+          <option value="png">PNG فریم‌ها (zip)</option>
+        </select></div>
+      <div><label>کیفیت</label><br>
+        <select id="preset">
+          <option value="quality">کیفیت بالا</option>
+          <option value="high">بالا</option>
+          <option value="fast">سریع</option>
+        </select></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="fullSong"> 🕐 سینک با کل آهنگ (حذف تایم‌لاین)</label>
     <button class="go" id="go" disabled>✨ ساخت ویدیو</button>
     <div id="prog"><div></div></div>
     <div id="status">آهنگ را انتخاب کن</div>
@@ -69,6 +106,8 @@
 <script>
 const $ = s => document.querySelector(s);
 let look = 'beatbars', audioB64 = null, audioName = '', jobId = null, poll = null;
+// trim state (seconds)
+let songDur = 0, trimStart = 0, trimEnd = 15, peaks = null, dragging = null;
 
 fetch('/api/looks').then(r=>r.json()).then(d=>{
   const g = $('#gallery'), sel = $('#lookSel');
@@ -78,7 +117,6 @@ fetch('/api/looks').then(r=>r.json()).then(d=>{
     if (L.group !== lastGrp) { lastGrp = L.group;
       const h = document.createElement('div'); h.className='grp'; h.textContent = L.group; g.appendChild(h);
       const og = document.createElement('optgroup'); og.label = L.group; sel.appendChild(og);
-      og.dataset.grp = L.group;
     }
     const t = document.createElement('div'); t.className='tile'+(L.id===look?' sel':'');
     t.innerHTML = `<h3>${L.id}</h3><p>${L.desc}</p>`;
@@ -90,7 +128,7 @@ fetch('/api/looks').then(r=>r.json()).then(d=>{
   });
   sel.value = look;
 });
-sel_onchange = $('#lookSel').onchange = e => { look = e.target.value;
+$('#lookSel').onchange = e => { look = e.target.value;
   document.querySelectorAll('.tile').forEach(x=>x.classList.toggle('sel', x.querySelector('h3').textContent===look)); };
 
 const drop = $('#drop');
@@ -100,28 +138,101 @@ drop.ondragleave = ()=>drop.classList.remove('over');
 drop.ondrop = e=>{e.preventDefault(); drop.classList.remove('over'); loadFile(e.dataTransfer.files[0]);};
 $('#file').onchange = e=>loadFile(e.target.files[0]);
 
+// ---------- waveform decode + timeline ----------
+async function decodePeaks(file){
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC();
+  const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+  ctx.close();
+  songDur = buf.duration;
+  const ch = buf.getChannelData(0), N = 600, step = Math.floor(ch.length / N);
+  peaks = [];
+  for (let i=0;i<N;i++){
+    let mx = 0;
+    for (let j=i*step; j<Math.min((i+1)*step, ch.length); j+=16){ const v=Math.abs(ch[j]); if(v>mx) mx=v; }
+    peaks.push(mx);
+  }
+  trimStart = 0; trimEnd = Math.min(15, songDur); dragging = null;
+  $('#timeline').style.display = 'block';
+  $('#songMeta').style.display = 'block';
+  $('#songMeta').innerHTML = `⏱ ${songDur.toFixed(1)}s · 🎨 <b>${look}</b>`;
+  drawTimeline();
+}
+
+function fmtT(s){ const m=Math.floor(s/60); return `${m}:${(s%60).toFixed(1).padStart(4,'0')}`; }
+
+function drawTimeline(){
+  const c = $('#wave'), ctx = c.getContext('2d'), W = c.width, H = c.height;
+  ctx.clearRect(0,0,W,H);
+  if (!peaks) return;
+  // waveform
+  ctx.fillStyle = '#3d4a66';
+  const mid = H/2;
+  peaks.forEach((p,i)=>{ const h = Math.max(1, p*H*0.9); ctx.fillRect(i, mid-h/2, 1, h); });
+  // trim window
+  const x0 = trimStart/songDur*W, x1 = trimEnd/songDur*W;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0,0,x0,H); ctx.fillRect(x1,0,W-x1,H);
+  ctx.fillStyle = '#00f5d4';
+  ctx.fillRect(x0-2,0,4,H); ctx.fillRect(x1-2,0,4,H);
+  ctx.fillStyle = 'rgba(0,245,212,0.08)';
+  ctx.fillRect(x0,0,x1-x0,H);
+  $('#tStart').textContent = fmtT(trimStart);
+  $('#tEnd').textContent = fmtT(trimEnd);
+  $('#tLen').textContent = (trimEnd-trimStart).toFixed(1)+'s';
+}
+
+function tPos(e){
+  const r = $('#wave').getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX-r.left)/r.width)) * songDur;
+}
+const wave = $('#wave');
+wave.addEventListener('pointerdown', e=>{
+  const p = tPos(e), d0 = Math.abs(p-trimStart), d1 = Math.abs(p-trimEnd);
+  if (d0 < songDur*0.03) dragging='start';
+  else if (d1 < songDur*0.03) dragging='end';
+  else { dragging='move'; wave._off = p - trimStart; wave._len = trimEnd-trimStart; }
+});
+window.addEventListener('pointermove', e=>{
+  if (!dragging || !songDur) return;
+  const p = tPos(e);
+  if (dragging==='start') trimStart = Math.min(p, trimEnd-0.5);
+  else if (dragging==='end') trimEnd = Math.max(p, trimStart+0.5);
+  else { trimStart = Math.max(0, Math.min(p-wave._off, songDur-wave._len)); trimEnd = trimStart+wave._len; }
+  drawTimeline();
+});
+window.addEventListener('pointerup', ()=>dragging=null);
+
+$('#fullSong').onchange = e=>{ $('#timeline').style.opacity = e.target.checked ? .3 : 1; };
+
 function loadFile(f){ if(!f) return; audioName=f.name;
   const r=new FileReader(); r.onload=()=>{ audioB64=r.result.split(',')[1];
     $('#status').textContent = '✓ ' + f.name + ' (' + Math.round(f.size/1024) + ' KB)';
-    $('#go').disabled=false; };
+    $('#go').disabled=false;
+    decodePeaks(f).catch(()=>{}); };
   r.readAsDataURL(f); }
 
 $('#go').onclick = ()=>{
   $('#go').disabled=true; $('#prog').style.display='block'; $('#prog>div').style.width='5%';
   $('#status').textContent='در حال ارسال…';
+  const full = $('#fullSong').checked;
   fetch('/api/render',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({audio_b64:audioB64, audio_name:audioName, look, duration:+$('#dur').value,
-      width:+$('#w').value, height:+$('#h').value})})
+    body:JSON.stringify({audio_b64:audioB64, audio_name:audioName, look,
+      duration: full ? songDur : (trimEnd-trimStart),
+      start: full ? 0 : trimStart, end: full ? songDur : trimEnd,
+      width:+$('#w').value, height:+$('#h').value, fps:+$('#fps').value,
+      format:$('#fmt').value, preset:$('#preset').value})})
   .then(r=>r.json()).then(d=>{ jobId=d.job_id; poll=setInterval(check,1200); });
 };
 
 function check(){ fetch('/api/job/'+jobId).then(r=>r.json()).then(d=>{
   $('#prog>div').style.width=(d.progress||0)+'%';
-  $('#status').textContent = d.status==='done' ? '✅ آماده!' :
-    d.status==='error' ? '❌ '+d.error : '⏳ ' + (d.status==='analyzing'?'تحلیل آهنگ':'رندر ') + ' ' + (d.progress||0) + '%';
+  $('#status').textContent = d.status==='done' ? '✅ آماده! ('+d.render_seconds+'s · '+d.frames+' فریم)' :
+    d.status==='error' ? '❌ '+d.error : '⏳ ' + (d.status==='analyzing'?'تحلیل آهنگ':'رندر ');
   if(d.status==='done'){ clearInterval(poll); $('#go').disabled=false;
     const v=$('#vid'); v.style.display='block'; $('#hint').style.display='none';
-    v.src='/video/'+d.video; v.play();
+    v.src='/video/'+d.video;
+    if (d.video.endsWith('.mp4')||d.video.endsWith('.webm')) v.play();
   } else if(d.status==='error'){ clearInterval(poll); $('#go').disabled=false; }
 });}
 </script>

@@ -167,10 +167,31 @@ def main():
 
     # 2. deps
     check_import("PIL", "pillow", "کتابخانه pillow")
+    check_import("numpy", "numpy", "کتابخانه numpy")
     check_cmd("ffmpeg", "ffmpeg نصب نشده — برای خروجی ویدیو لازم است",
               fix_pkgs=["ffmpeg"] if not fast else None)
     if shutil.which("ffmpeg"):
         check_cmd("ffprobe", "ffprobe (بخشی از ffmpeg)")
+
+    # 3. v1.4 modules
+    for name in ("beatmap", "exportfmt", "beatviz"):
+        try:
+            importlib.import_module(name)
+            report(PASS, f"{name}.py imports", f"ماژول {name}")
+        except Exception as e:
+            report(FAIL, f"{name}.py imports", f"ماژول {name}", str(e))
+    encs = None
+    try:
+        import exportfmt
+        encs = exportfmt.available_encoders()
+        missing = [k for k, ok in encs.items() if not ok]
+        if missing:
+            report(FAIL, "encoders: " + ",".join(missing),
+                   "انکودرهای ffmpeg ناقص", "install a full ffmpeg build")
+        else:
+            report(PASS, "encoders x264/x265/vp9/webp", "انکودرهای ffmpeg کامل")
+    except Exception as e:
+        report(FAIL, "encoder probe", "بررسی انکودرها", str(e))
 
     # 3. looks
     look_info = check_looks()

@@ -24,6 +24,14 @@ from PIL import Image
 import midilib
 import looks as looks_mod
 import looks_music
+import looks_graph
+
+# render quality presets
+PRESETS = {
+    "fast":    {"ss": 1, "crf": 20, "bitrate": None, "dither": 0.0},
+    "high":    {"ss": 2, "crf": 18, "bitrate": None, "dither": 0.5},
+    "quality": {"ss": 2, "crf": 16, "bitrate": "12M", "dither": 1.0},
+}
 
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
@@ -107,6 +115,16 @@ def estimate_bpm(beats, fps):
     return round(60.0 / med) if med > 0 else None
 
 
+def add_dither(img, strength=1.0):
+    """Subtle symmetric noise dithering to eliminate gradient banding."""
+    from PIL import ImageChops
+    noise = Image.effect_noise(img.size, 8.0 * min(2.0, max(0.25, strength))).convert("L").convert("RGB")
+    # amplitude ~ +-3 levels max, symmetric so no brightness bias
+    pos = noise.point(lambda v: round((v - 128) / 3) if v > 128 else 0)
+    neg = noise.point(lambda v: round((128 - v) / 3) if v <= 128 else 0)
+    return ImageChops.subtract(ImageChops.add(img, pos), neg)
+
+
 # ---------- pipeline ----------
 def main():
     ap = argparse.ArgumentParser(description="beatviz — beat to video")
@@ -118,15 +136,22 @@ def main():
     ap.add_argument("--height", type=int, default=1920)
     ap.add_argument("--fps", type=int, default=30)
     ap.add_argument("--duration", type=float, default=7.0)
+    ap.add_argument("--preset", choices=list(PRESETS), default="quality",
+                    help="render quality preset (default: quality = 2x supersampling, CRF 16)")
+    ap.add_argument("--ss", type=int, default=None, choices=[1, 2, 3],
+                    help="supersampling factor override (render at Nx, downscale LANCZOS)")
+    ap.add_argument("--dither", type=float, default=None, metavar="0-2",
+                    help="subtle dithering strength to kill banding (0=off)")
     ap.add_argument("--list-looks", action="store_true")
     args = ap.parse_args()
 
     if args.list_looks or not args.audio:
         print("available looks:")
-        for k in list(looks_mod.LOOKS) + list(looks_music.LOOKS):
+        for k in list(looks_mod.LOOKS) + list(looks_music.LOOKS) + list(looks_graph.LOOKS):
             print("  " + k)
         return
-    if args.look not in looks_mod.LOOKS and args.look not in looks_music.LOOKS:
+    if (args.look not in looks_mod.LOOKS and args.look not in looks_music.LOOKS
+            and args.look not in looks_graph.LOOKS):
         raise SystemExit(f"unknown look '{args.look}'; use --list-looks")
 
     meta = parse_filename_meta(args.audio)
@@ -148,28 +173,49 @@ def main():
     frames_dir = tempfile.mkdtemp(prefix="beatviz_")
     total = min(int(args.duration * fps), len(energies))
     flash = 0.0
-    fn = looks_mod.LOOKS.get(args.look) or looks_music.LOOKS.get(args.look)
+    fn = looks_mod.LOOKS.get(args.look) or looks_music.LOOKS.get(args.look) \
+        or looks_graph.LOOKS.get(args.look)
     if fn is None:
         raise SystemExit(f"unknown look '{args.look}'; use --list-looks")
+
+    # quality pipeline: supersample -> draw -> LANCZOS downscale (+ optional dither)
+    preset = PRESETS[args.preset]
+    ss = args.ss or preset["ss"]
+    dither = args.dither if args.dither is not None else preset["dither"]
+    rw, rh = args.width * ss, args.height * ss
+
+    def post(img):
+        if dither > 0:
+            img = add_dither(img, dither)
+        if ss > 1:
+            img = img.resize((args.width, args.height), Image.LANCZOS)
+        return img
+
     for i in range(total):
         flash = 1.0 if i in beats else max(0.0, flash - 0.15)
         win = [n for n in (midi.notes if midi else [])
                if abs(n.start - i / fps) < 0.05]
-        ctx = looks_mod.Ctx(args.width, args.height, i / fps,
+        ctx = looks_mod.Ctx(rw, rh, i / fps,
                             energies[i] if i < len(energies) else 0.0,
                             flash, midi, win)
         ctx.mono = mono
         ctx.sr = sr
         ctx.bpm = bpm
         ctx.duration = args.duration
-        fn(ctx).save(f"{frames_dir}/f{i:05d}.png")
-    print(f"[beatviz] rendered {total} frames with look={args.look}")
+        post(fn(ctx)).save(f"{frames_dir}/f{i:05d}.png")
+    print(f"[beatviz] rendered {total} frames with look={args.look} "
+          f"(preset={args.preset}, ss={ss}, dither={dither})")
 
-    subprocess.run([
-        "ffmpeg", "-y", "-v", "error", "-framerate", str(fps),
-        "-i", f"{frames_dir}/f%05d.png", "-i", args.audio,
-        "-t", str(args.duration), "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        "-r", str(fps), "-c:a", "aac", "-shortest", args.out], check=True)
+    enc = ["ffmpeg", "-y", "-v", "error", "-framerate", str(fps),
+           "-i", f"{frames_dir}/f%05d.png", "-i", args.audio,
+           "-t", str(args.duration),
+           "-c:v", "libx264", "-preset", "slow", "-crf", str(preset["crf"]),
+           "-pix_fmt", "yuv420p", "-profile:v", "high",
+           "-movflags", "+faststart", "-r", str(fps), "-c:a", "aac", "-b:a", "256k"]
+    if preset["bitrate"]:
+        enc += ["-maxrate", preset["bitrate"], "-bufsize", preset["bitrate"]]
+    enc += ["-shortest", args.out]
+    subprocess.run(enc, check=True)
     for f in os.listdir(frames_dir):
         os.unlink(os.path.join(frames_dir, f))
     os.rmdir(frames_dir)

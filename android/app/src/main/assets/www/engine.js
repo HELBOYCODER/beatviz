@@ -562,3 +562,171 @@ LOOKS['t25_minimal_hud'] = { desc:'HUD مینیمال', fn: (d, ctx) => {
   const prog = ctx.t/Math.max(0.01, ctx.duration);
   d.fillRect(pad + b*0.6, h*0.5, (w - 2*pad - b*0.9)*prog, h*0.008);
 }};
+// ---------- graph look family (knowledge-graph visualizer) ----------
+// nodes = frequency bands clustered by spectrum position, edges = relationships
+// between concurrent bands (energy similarity + spectral flux), force-directed
+// layout animated by the music. Color = frequency cluster via gradient.
+
+const _gPrev = {};
+function graphBands(ctx, key, n){
+  const spec = ctx.spec(n);
+  let flux = new Array(n).fill(0);
+  if (_gPrev[key] && _gPrev[key].length === n){
+    for (let i = 0; i < n; i++)
+      flux[i] = Math.min(1, Math.max(0, (spec[i] - _gPrev[key][i]) * 4));
+  }
+  _gPrev[key] = spec;
+  return [spec, flux];
+}
+function gEdge(spec, i, j, flux, thresh){
+  const eSim = 1 - Math.abs(spec[i] - spec[j]);
+  const fMix = (flux[i] + flux[j]) / 2;
+  const w = Math.max(0, eSim * 0.6 + fMix * 0.6 - 0.35);
+  return w > thresh ? w : 0;
+}
+function bright(c, m){ return `rgb(${Math.min(255,Math.round(c[0]*m))},${Math.min(255,Math.round(c[1]*m))},${Math.min(255,Math.round(c[2]*m))})`; }
+
+// graph_forced — classic force-directed graph, glowing nodes
+LOOKS['graph_forced'] = { desc:'گراف نیروی‌گرا', fn: (d, ctx) => {
+  const w = ctx.w, h = ctx.h;
+  d.fillStyle = BG_DARK; d.fillRect(0,0,w,h);
+  const [spec, flux] = graphBands(ctx, 'forced', 18);
+  const n = spec.length, cx = w/2, cy = h*0.48, rad = Math.min(w,h)*0.36;
+  const pts = [];
+  for (let i = 0; i < n; i++){
+    const ang = 2*Math.PI*i/n + Math.sin(ctx.t*0.7 + i)*0.35;
+    const r = rad * (0.45 + 0.55*((i%5)/4));
+    pts.push([cx + Math.cos(ang)*r, cy + Math.sin(ang)*r*0.92]);
+  }
+  const edges = [];
+  for (let i = 0; i < n; i++) for (let j = i+1; j < n; j++){
+    const wg = gEdge(spec, i, j, flux, 0.12);
+    if (wg > 0) edges.push([i, j, wg]);
+  }
+  // relaxation
+  for (let it = 0; it < 3; it++){
+    for (let i = 0; i < n; i++) for (let j = i+1; j < n; j++){
+      const dx = pts[j][0]-pts[i][0], dy = pts[j][1]-pts[i][1];
+      const d2 = Math.max(dx*dx+dy*dy, 40), dd = Math.sqrt(d2);
+      const f = (Math.min(w,h)*0.03)*(Math.min(w,h)*0.03)/d2;
+      pts[i][0] -= dx/dd*f; pts[i][1] -= dy/dd*f;
+      pts[j][0] += dx/dd*f; pts[j][1] += dy/dd*f;
+    }
+    for (const [i,j,wg] of edges){
+      const dx = pts[j][0]-pts[i][0], dy = pts[j][1]-pts[i][1];
+      const dd = Math.max(Math.sqrt(dx*dx+dy*dy), 1);
+      const target = Math.min(w,h)*(0.10 + 0.10*(1-wg));
+      const f = (dd-target)*0.08*(0.4+wg);
+      pts[i][0] += dx/dd*f; pts[i][1] += dy/dd*f;
+      pts[j][0] -= dx/dd*f; pts[j][1] -= dy/dd*f;
+    }
+    const m = Math.min(w,h)*0.08;
+    for (const p of pts){ p[0]=Math.max(m,Math.min(w-m,p[0])); p[1]=Math.max(m,Math.min(h-m,p[1])); }
+  }
+  for (const [i,j,wg] of edges){
+    const col = gradientColor((i+j)/(2*n), 0,245,212, 60,99,221, 170,60,220);
+    d.strokeStyle = bright([col[0]||col], 1);
+    d.globalAlpha = 0.55 + 0.45*wg;
+    d.lineWidth = Math.max(1, Math.min(w,h)*0.004*(0.4+wg));
+    d.beginPath(); d.moveTo(pts[i][0],pts[i][1]); d.lineTo(pts[j][0],pts[j][1]); d.stroke();
+  }
+  d.globalAlpha = 1;
+  const rmax = Math.min(w,h)*0.045;
+  for (let i = 0; i < n; i++){
+    const e = Math.pow(spec[i], 0.85);
+    const rr = rmax*(0.28 + 0.82*e)*(1 + 0.35*ctx.beat*(1-i/n));
+    const f = i/(n-1);
+    const col = e < 0.25 ? [Math.min(255,40+f*150), Math.min(255,120+f*100), Math.min(255,180+f*60)] : null;
+    d.fillStyle = col ? `rgb(${col[0]},${col[1]},${col[2]})` : pal(f, P_TEAL);
+    d.beginPath(); d.arc(pts[i][0], pts[i][1], rr, 0, Math.PI*2); d.fill();
+    if (e > 0.55){
+      d.strokeStyle = rgba([Math.min(255,P_TEAL[2][0]+60),Math.min(255,P_TEAL[2][1]+60),Math.min(255,P_TEAL[2][2]+60)], 0.8);
+      d.lineWidth = Math.max(1, Math.min(w,h)*0.003);
+      d.beginPath(); d.arc(pts[i][0], pts[i][1], rr*1.6, 0, Math.PI*2); d.stroke();
+    }
+  }
+  beatvizLabel(d, ctx, false);
+}};
+
+// graph_neural — layered neural-net look, edges glow on flux
+LOOKS['graph_neural'] = { desc:'شبکه عصبی', fn: (d, ctx) => {
+  const w = ctx.w, h = ctx.h;
+  d.fillStyle = 'rgb(8,9,16)'; d.fillRect(0,0,w,h);
+  const [spec, flux] = graphBands(ctx, 'neural', 21);
+  const n = spec.length, layers = 5, per = Math.floor(n/layers);
+  const pad = w*0.12, colw = (w-2*pad)/(layers-1);
+  const pts = [], layerOf = [];
+  for (let L = 0; L < layers; L++){
+    const cnt = (L < layers-1) ? per : n - per*(layers-1);
+    const x = pad + L*colw;
+    const spread = h*(0.62 + 0.06*Math.sin(ctx.t + L));
+    for (let k = 0; k < cnt; k++){
+      pts.push([x + Math.sin(ctx.t*1.3 + L*2 + k)*w*0.012, h/2 - spread/2 + spread*(k+0.5)/cnt]);
+      layerOf.push(L);
+    }
+  }
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++){
+    if (layerOf[j] !== layerOf[i] + 1) continue;
+    const wg = gEdge(spec, i, j, flux, 0.18);
+    if (wg <= 0) continue;
+    const f = (i+j)/(2*n);
+    let col = pal(f, P_TEAL);
+    const m = 0.8 + 1.2*wg;
+    if (flux[i] + flux[j] > 0.35) col = 'rgb(140,255,240)';
+    d.globalAlpha = Math.min(1, 0.25 + 0.9*wg);
+    d.strokeStyle = col;
+    d.lineWidth = Math.max(1, Math.min(w,h)*0.0025*(0.5+wg*2));
+    d.beginPath(); d.moveTo(pts[i][0],pts[i][1]); d.lineTo(pts[j][0],pts[j][1]); d.stroke();
+  }
+  d.globalAlpha = 1;
+  for (let i = 0; i < n; i++){
+    const e = Math.pow(spec[i], 0.85);
+    const r = Math.min(w,h)*0.030*(0.25 + 0.75*e)*(1 + 0.3*ctx.beat);
+    d.fillStyle = pal(i/(n-1), P_TEAL);
+    d.beginPath(); d.arc(pts[i][0], pts[i][1], r, 0, Math.PI*2); d.fill();
+    if (e > 0.7){ d.strokeStyle = '#fff'; d.lineWidth = 2; d.stroke(); }
+  }
+  const px = pad + (ctx.t % 1.0)*(w - 2*pad);
+  d.strokeStyle = 'rgb(0,245,212)'; d.lineWidth = Math.max(1, h*0.002);
+  d.beginPath(); d.moveTo(px, h*0.14); d.lineTo(px, h*0.86); d.stroke();
+  beatvizLabel(d, ctx, false);
+}};
+
+// graph_constellation — star map, drifting nodes, faint edges, beat core
+LOOKS['graph_constellation'] = { desc:'صورت فلکی', fn: (d, ctx) => {
+  const w = ctx.w, h = ctx.h;
+  d.fillStyle = 'rgb(5,6,12)'; d.fillRect(0,0,w,h);
+  const [spec, flux] = graphBands(ctx, 'constellation', 24);
+  const n = spec.length, cx = w/2, cy = h*0.48, rad = Math.min(w,h)*0.40;
+  const pts = [];
+  for (let i = 0; i < n; i++){
+    const ang = 2*Math.PI*i/n + ctx.t*0.25*(i%2 ? 1 : -1) + Math.sin(ctx.t*0.5 + i*2)*0.12;
+    const r = rad*(0.35 + 0.65*(i/n))*(1 + 0.08*Math.sin(ctx.t + i));
+    pts.push([cx + Math.cos(ang)*r, cy + Math.sin(ang)*r*1.05]);
+  }
+  for (let i = 0; i < n; i++) for (let j = i+1; j < n; j++){
+    const wg = gEdge(spec, i, j, flux, 0.15);
+    if (wg <= 0) continue;
+    d.globalAlpha = 0.30 + 0.70*wg;
+    d.strokeStyle = pal((i+j)/(2*n), P_ICE);
+    d.lineWidth = Math.max(1, Math.min(w,h)*0.002*(0.5 + wg*1.5));
+    d.beginPath(); d.moveTo(pts[i][0],pts[i][1]); d.lineTo(pts[j][0],pts[j][1]); d.stroke();
+  }
+  d.globalAlpha = 1;
+  for (let i = 0; i < n; i++){
+    const e = Math.pow(spec[i], 0.85);
+    const r = Math.min(w,h)*0.006 + Math.min(w,h)*0.028*e*(1 + 0.5*ctx.beat);
+    d.fillStyle = pal(i/(n-1), P_ICE);
+    d.beginPath(); d.arc(pts[i][0], pts[i][1], r, 0, Math.PI*2); d.fill();
+    if (e > 0.5){
+      const s = r*3;
+      d.strokeStyle = rgba([200,220,255], 0.7); d.lineWidth = 1;
+      d.beginPath(); d.moveTo(pts[i][0]-s, pts[i][1]); d.lineTo(pts[i][0]+s, pts[i][1]);
+      d.moveTo(pts[i][0], pts[i][1]-s); d.lineTo(pts[i][0], pts[i][1]+s); d.stroke();
+    }
+  }
+  const r0 = Math.min(w,h)*(0.03 + 0.03*ctx.energy + 0.02*ctx.beat);
+  d.fillStyle = 'rgb(0,245,212)';
+  d.beginPath(); d.arc(cx, cy, r0, 0, Math.PI*2); d.fill();
+  beatvizLabel(d, ctx, false);
+}};

@@ -1,8 +1,8 @@
 # 🎵 BeatViz
 
-**BeatViz** یک اپلیکیشن ویژوالایزر موزیک برای آهنگسازها و پروڈیوسرهاست — آهنگت رو وارد کن، از **۵۸ قالب حرفه‌ای** انتخاب کن، و خروجی ویدیوی **Full HD (1080p)** بگیر تا کارهات دیگه خشک و خالی آپلود نشن.
+**BeatViz** یک اپلیکیشن ویژوالایزر موزیک برای آهنگسازها و پروڈیوسرهاست — آهنگت رو وارد کن، از **۶۱ قالب حرفه‌ای** انتخاب کن، و خروجی ویدیوی **Full HD (1080p)** بگیر تا کارهات دیگه خشک و خالی آپلود نشن.
 
-> BeatViz is a music visualizer app for musicians & producers — drop your track, pick from **58 pro templates**, and export a **Full HD video** so your releases never go online as a bare waveform again.
+> BeatViz is a music visualizer app for musicians & producers — drop your track, pick from **61 pro templates**, and export a **Full HD video** so your releases never go online as a bare waveform again.
 
 ## ✨ امکانات | Features
 
@@ -36,13 +36,37 @@
 
 `beatbars` طیف گرادیانی · `aura` حلقه‌های نفس‌کشانه · `melody` حباب‌های نت · `transit` نقشه‌ی مترو · `piano` پیانورول · `radial` انفجار شعاعی · + ذرات، تونل، کالیدوسکوپ، آتش‌بازی، وینیل، نوار کاست، اکو، ماتریکسی، ماندالا، سیت‌سکی و ۴۵ قالب دیگه
 
+
+### یک‌خطی نصب و سلامت‌سنجی | One-command install & doctor
+
+```bash
+bash install.sh    # نصب همه‌ی پیش‌نیازها (پایتون، pillow، ffmpeg) — قابل اجرای مکرر
+python3 doctor.py  # بررسی همه‌ی وابستگی‌ها + رندر فریم آزمایشی برای تک‌تک قالب‌ها + تست انکود ffmpeg
+```
+
+### کیفیت رندر HD | HD render quality
+
+```bash
+# پیش‌فرض: preset=quality → سوپرسمپلینگ ۲x + LANCZOS + CRF 16 + dithering
+python3 beatviz.py song.wav --look graph_forced --width 1080 --height 1920 --fps 60
+# گزینه‌ها:
+#   --preset fast|high|quality   سرعت در برابر کیفیت
+#   --ss 1|2|3                  ضریب سوپرسمپلینگ
+#   --dither 0..2               حذف باندینگ گرادیان (0=خاموش)
+```
+
+### قالب‌های گراف | Graph look family (v1.3.0)
+
+`graph_forced` گراف نیروی‌گرا · `graph_neural` شبکه عصبی · `graph_constellation` صورت فلکی
+— گره‌ها = باندهای فرکانسی، یال‌ها = روابط طیفی، چیدمان نیرو-گرا با موسیقی زنده می‌شود.
+
 ## 🛠 اجرا از سورس | Run from source
 
 ```bash
 git clone https://github.com/HELBOYCODER/beatviz.git
 cd beatviz
-pip install pillow
-# backend needs ffmpeg on PATH
+bash install.sh          # one command: installs python3 + pillow + ffmpeg (apt/dnf/pacman/brew)
+python3 doctor.py        # health check: every dep + every look + ffmpeg encode test
 python3 app_server.py 8765     # http://127.0.0.1:8765
 # یا دسکتاپ:
 npm install && npm start

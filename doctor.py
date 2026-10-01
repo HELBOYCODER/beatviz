@@ -17,9 +17,11 @@ results = []
 
 
 def report(status, en, fa, detail=""):
+    results.append(status)
+    if "--json" in sys.argv:
+        return
     color = {"PASS": GREEN, "FAIL": RED, "FIXED": YEL}[status]
     print(f"  {color}[{status}]{OFF} {en} | {fa}" + (f"  ({detail})" if detail else ""))
-    results.append(status)
 
 
 def check_import(mod, pip_name=None, fa_name=""):
@@ -157,8 +159,10 @@ def check_ffmpeg_encode():
 
 def main():
     fast = "--fast" in sys.argv
-    print(f"{BOLD}BeatViz Doctor | دکتر بیت‌ویز{OFF}")
-    print("=" * 60)
+    json_mode = "--json" in sys.argv
+    if not json_mode:
+        print(f"{BOLD}BeatViz Doctor | دکتر بیت‌ویز{OFF}")
+        print("=" * 60)
 
     # 1. python
     v = f"{sys.version_info.major}.{sys.version_info.minor}"
@@ -198,6 +202,37 @@ def main():
 
     # 4. encode
     check_ffmpeg_encode()
+
+    checks = [
+        {"id": f"check{i}", "status": s, "detail": d}
+        for i, (s, d) in enumerate(
+            [(r, "") for r in results])
+    ]
+    ok = all(r in (PASS, FIXED) for r in results)
+    if json_mode:
+        import json as _json
+        import exportfmt as _ef
+        encs2 = {}
+        try:
+            encs2 = _ef.available_encoders()
+        except Exception:
+            pass
+        try:
+            import beatviz as _bv
+            look_names = _bv.all_look_names()
+        except Exception:
+            look_names = []
+        print(_json.dumps({
+            "ok": ok,
+            "passed": results.count(PASS) + results.count(FIXED),
+            "failed": results.count(FAIL),
+            "total": len(results),
+            "results": results,
+            "encoders": encs2,
+            "looks_count": len(look_names),
+            "version": "1.4.0",
+        }))
+        return 0 if ok else 1
 
     print("=" * 60)
     n_pass = results.count(PASS) + results.count(FIXED)

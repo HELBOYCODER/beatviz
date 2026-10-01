@@ -43,6 +43,19 @@
   .chk { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text); cursor:pointer; }
   #songMeta { font-size:11px; color:var(--dim); direction:ltr; text-align:left; }
   #songMeta b { color:var(--accent); }
+  /* segment playlist */
+  #segments { display:flex; flex-direction:column; gap:6px; }
+  .seg { display:flex; align-items:center; gap:8px; background:var(--panel); border:1px solid #232a3a; border-radius:10px; padding:7px 10px; font-size:12px; direction:ltr; }
+  .seg b { color:var(--accent); flex:1; cursor:grab; }
+  .seg button { background:none; border:0; color:var(--dim); cursor:pointer; font-size:14px; }
+  .seg button:hover { color:#ff5e62; }
+  .btn2 { background:var(--panel); color:var(--accent); border:1px solid #2a3040; border-radius:10px; padding:10px; font-size:13px; cursor:pointer; }
+  .btn2:hover { border-color:var(--accent); }
+  .thumb { width:100%; border-radius:8px 8px 0 0; display:block; background:#000; aspect-ratio:9/16; object-fit:cover; }
+  .tile { padding:0 !important; overflow:hidden; }
+  .tile .cap { padding:8px 10px 10px; }
+  .plbtns { display:flex; gap:8px; }
+  .plbtns .btn2 { flex:1; }
 </style>
 </head>
 <body>
@@ -65,13 +78,21 @@
     </div>
     <!-- Instagram-style trim timeline -->
     <div id="timeline" style="display:none">
-      <label>تایم‌لاین — بازه را انتخاب کن</label><br>
+      <label>تایم‌لاین — بازه را انتخاب کن (نوارهای قرمز: بیت‌ها)</label><br>
       <canvas id="wave" width="600" height="64"></canvas>
       <div id="trimInfo">
         <span>شروع <b id="tStart">0:00.0</b></span>
         <span>پایان <b id="tEnd">0:15.0</b></span>
         <span>طول <b id="tLen">15.0s</b></span>
       </div>
+    </div>
+    <!-- multi-segment playlist -->
+    <div id="plRow" style="display:none; flex-direction:column; gap:8px;">
+      <div class="plbtns">
+        <button class="btn2" id="addSeg">➕ افزودن سگمنت (Segment)</button>
+        <button class="btn2" id="doPlaylist">🎬 رندر پلی‌لیست</button>
+      </div>
+      <div id="segments"></div>
     </div>
     <div class="row">
       <div><label>عرض</label><br><input type="number" id="w" value="1920"></div>
@@ -96,7 +117,10 @@
         </select></div>
     </div>
     <label class="chk"><input type="checkbox" id="fullSong"> 🕐 سینک با کل آهنگ (حذف تایم‌لاین)</label>
-    <button class="go" id="go" disabled>✨ ساخت ویدیو</button>
+    <div class="plbtns">
+      <button class="btn2" id="preview" disabled>⚡ پیش‌نمایش سریع</button>
+      <button class="go" id="go" disabled style="flex:1">✨ ساخت ویدیو</button>
+    </div>
     <div id="prog"><div></div></div>
     <div id="status">آهنگ را انتخاب کن</div>
   </div>
@@ -108,6 +132,8 @@ const $ = s => document.querySelector(s);
 let look = 'beatbars', audioB64 = null, audioName = '', jobId = null, poll = null;
 // trim state (seconds)
 let songDur = 0, trimStart = 0, trimEnd = 15, peaks = null, dragging = null;
+let beatTimes = [], segments = [];   // beatmap beats + playlist
+let lastSegSel = 0;                  // which segment the trim edits
 
 fetch('/api/looks').then(r=>r.json()).then(d=>{
   const g = $('#gallery'), sel = $('#lookSel');
@@ -119,9 +145,14 @@ fetch('/api/looks').then(r=>r.json()).then(d=>{
       const og = document.createElement('optgroup'); og.label = L.group; sel.appendChild(og);
     }
     const t = document.createElement('div'); t.className='tile'+(L.id===look?' sel':'');
-    t.innerHTML = `<h3>${L.id}</h3><p>${L.desc}</p>`;
+    const im = document.createElement('img'); im.className='thumb';
+    im.loading='lazy'; im.src='/api/lookthumb/'+L.id;
+    im.onerror = ()=>im.remove();
+    const cap = document.createElement('div'); cap.className='cap';
+    cap.innerHTML = `<h3>${L.id}</h3><p>${L.desc}</p>`;
+    t.appendChild(im); t.appendChild(cap);
     t.onclick = ()=>{ document.querySelectorAll('.tile').forEach(x=>x.classList.remove('sel'));
-      t.classList.add('sel'); look = L.id; sel.value = L.id; };
+      t.classList.add('sel'); look = L.id; sel.value = L.id; if (segments.length) renderSegs(); };
     g.appendChild(t);
     const o = document.createElement('option'); o.value = L.id; o.textContent = `${L.id} — ${L.desc}`;
     sel.querySelector(`optgroup[label="${L.group}"]`).appendChild(o);
@@ -156,7 +187,21 @@ async function decodePeaks(file){
   $('#timeline').style.display = 'block';
   $('#songMeta').style.display = 'block';
   $('#songMeta').innerHTML = `⏱ ${songDur.toFixed(1)}s · 🎨 <b>${look}</b>`;
+  $('#plRow').style.display = 'flex';
   drawTimeline();
+  // full-song beatmap from server (beats, sections, BPM)
+  const r = new FileReader();
+  r.onload = () => fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({audio_b64:r.result.split(',')[1], audio_name:audioName})})
+    .then(x=>x.json()).then(d=>{
+      const pollB = setInterval(()=>fetch('/api/job/'+d.job_id).then(x=>x.json()).then(s=>{
+        if (s.status==='done'){ clearInterval(pollB); beatTimes = (s.beatmap.beats||[]).map(Number);
+          $('#songMeta').innerHTML += ` · ♫ <b>${s.beatmap.bpm||'?'} BPM</b> · ${beatTimes.length} beat`;
+          drawTimeline(); }
+        else if (s.status==='error') clearInterval(pollB);
+      }), 1000);
+    }).catch(()=>{});
+  r.readAsDataURL(f);
 }
 
 function fmtT(s){ const m=Math.floor(s/60); return `${m}:${(s%60).toFixed(1).padStart(4,'0')}`; }
@@ -177,6 +222,12 @@ function drawTimeline(){
   ctx.fillRect(x0-2,0,4,H); ctx.fillRect(x1-2,0,4,H);
   ctx.fillStyle = 'rgba(0,245,212,0.08)';
   ctx.fillRect(x0,0,x1-x0,H);
+  // beat markers (from server beatmap)
+  ctx.fillStyle = 'rgba(255,94,98,0.75)';
+  beatTimes.forEach(b=>{ const x = b/songDur*W; ctx.fillRect(x, H-7, 1.5, 7); });
+  // segment boundaries
+  ctx.fillStyle = 'rgba(170,60,220,0.9)';
+  segments.forEach(s=>{ if(s.start>0) ctx.fillRect(s.start/songDur*W-1, 0, 2, H); });
   $('#tStart').textContent = fmtT(trimStart);
   $('#tEnd').textContent = fmtT(trimEnd);
   $('#tLen').textContent = (trimEnd-trimStart).toFixed(1)+'s';
@@ -205,11 +256,56 @@ window.addEventListener('pointerup', ()=>dragging=null);
 
 $('#fullSong').onchange = e=>{ $('#timeline').style.opacity = e.target.checked ? .3 : 1; };
 
+// ---------- multi-segment playlist ----------
+function renderSegs(){
+  const box = $('#segments'); box.innerHTML='';
+  segments.forEach((s,i)=>{
+    const d = document.createElement('div'); d.className='seg'; d.draggable = true;
+    d.innerHTML = `<b>${i+1}. ${s.look}</b><span>${fmtT(s.start)} → ${fmtT(s.end)} (${(s.end-s.start).toFixed(1)}s)</span>`;
+    const del = document.createElement('button'); del.textContent='✕'; del.title='حذف';
+    del.onclick = ()=>{ segments.splice(i,1); renderSegs(); drawTimeline(); };
+    d.appendChild(del);
+    d.ondragstart = ev=>ev.dataTransfer.setData('text/plain', i);
+    d.ondragover = ev=>ev.preventDefault();
+    d.ondrop = ev=>{ ev.preventDefault(); const from = +ev.dataTransfer.getData('text/plain');
+      const [m] = segments.splice(from,1); segments.splice(i,0,m); renderSegs(); drawTimeline(); };
+    d.onclick = ev=>{ if(ev.target===del) return;
+      trimStart = s.start; trimEnd = s.end; look = s.look; $('#lookSel').value = s.look;
+      document.querySelectorAll('.tile').forEach(x=>x.classList.toggle('sel', x.querySelector('h3') && x.querySelector('h3').textContent===look));
+      drawTimeline(); };
+    box.appendChild(d);
+  });
+}
+$('#addSeg').onclick = ()=>{
+  segments.push({look, start:trimStart, end:trimEnd});
+  renderSegs(); drawTimeline();
+};
+$('#doPlaylist').onclick = ()=>{
+  if (!segments.length) return;
+  $('#go').disabled=true; $('#prog').style.display='block'; $('#prog>div').style.width='5%';
+  $('#status').textContent='رندر پلی‌لیست (' + segments.length + ' سگمنت)…';
+  fetch('/api/playlist',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({audio_b64:audioB64, audio_name:audioName, segments,
+      width:+$('#w').value, height:+$('#h').value, fps:+$('#fps').value,
+      format:$('#fmt').value, preset:$('#preset').value})})
+  .then(r=>r.json()).then(d=>{ jobId=d.job_id; poll=setInterval(check,1500); });
+};
+
+// ---------- live preview (low-res fast render) ----------
+$('#preview').onclick = ()=>{
+  $('#go').disabled=true; $('#prog').style.display='block'; $('#prog>div').style.width='5%';
+  $('#status').textContent='پیش‌نمایش سریع ۵۴۰×۹۶۰…';
+  fetch('/api/preview',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({audio_b64:audioB64, audio_name:audioName, look,
+      start:trimStart, end:trimEnd})})
+  .then(r=>r.json()).then(d=>{ jobId=d.job_id; poll=setInterval(check,800); });
+};
+
 function loadFile(f){ if(!f) return; audioName=f.name;
   const r=new FileReader(); r.onload=()=>{ audioB64=r.result.split(',')[1];
-    $('#status').textContent = '✓ ' + f.name + ' (' + Math.round(f.size/1024) + ' KB)';
-    $('#go').disabled=false;
-    decodePeaks(f).catch(()=>{}); };
+   $('#status').textContent = '✓ ' + f.name + ' (' + Math.round(f.size/1024) + ' KB)';
+   $('#go').disabled=false; $('#preview').disabled=false;
+   decodePeaks(f).catch(()=>{}); };
   r.readAsDataURL(f); }
 
 $('#go').onclick = ()=>{

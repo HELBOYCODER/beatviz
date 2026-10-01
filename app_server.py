@@ -15,6 +15,7 @@ Endpoints:
 import base64
 import json
 import os
+import subprocess
 import tempfile
 import threading
 import time
@@ -23,11 +24,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import beatmap as beatmap_mod
 import beatviz
+import exportfmt
 import looks as looks_mod
 import looks_music
 import looks_graph
 import templates_pack1
 import templates_pack2
+
+VERSION = "1.4.0"
 
 ALL_LOOKS = {}
 for mod in (looks_mod, looks_music, looks_graph, templates_pack1, templates_pack2):
@@ -40,6 +44,54 @@ UI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_ui.html"
 
 _CTYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".gif": "image/gif",
            ".webp": "image/webp", ".zip": "application/zip"}
+PREVIEW = {"width": 540, "height": 960, "fps": 30}
+
+
+def run_playlist(job_id, audio_path, segments, fmt, width, height, fps, preset):
+    try:
+        parts = []
+        for i, seg in enumerate(segments):
+            JOBS[job_id].update(status=f"segment {i + 1}/{len(segments)}",
+                                progress=int(90 * i / max(1, len(segments))))
+            p, _ = beatviz.render_segment(
+                audio_path, seg["look"], os.path.join(OUT_DIR, f"{job_id}_s{i}"),
+                duration=seg["end"] - seg["start"], width=width, height=height,
+                fps=fps, preset=preset, fmt=fmt,
+                start=float(seg["start"]), end=float(seg["end"]), quiet=True)
+            parts.append(p)
+        JOBS[job_id]["status"] = "concatenating"
+        JOBS[job_id]["progress"] = 95
+        out = exportfmt.concat_clips(parts, os.path.join(OUT_DIR, f"{job_id}.mp4"))
+        JOBS[job_id].update(status="done", progress=100, video=os.path.basename(out))
+    except Exception as e:
+        JOBS[job_id].update(status="error", error=str(e)[:300])
+
+
+def run_analyze(job_id, audio_path, fps=60):
+    try:
+        JOBS[job_id]["status"] = "analyzing"
+        JOBS[job_id]["progress"] = 30
+        bm = beatmap_mod.build_beatmap(audio_path, fps)
+        JOBS[job_id].update(status="done", progress=100, beatmap=bm)
+    except Exception as e:
+        JOBS[job_id].update(status="error", error=str(e)[:300])
+
+
+def render_lookthumb(look_id, w=216, h=384):
+    """One representative rendered frame per look, cached on disk."""
+    cache = os.path.join(OUT_DIR, f"thumb_{look_id}.png")
+    if os.path.exists(cache):
+        return cache
+    fn = ALL_LOOKS.get(look_id)
+    if fn is None:
+        return None
+    ctx = looks_mod.Ctx(w, h, 1.0, 0.5, 0.7, None, [])
+    ctx.mono = [0.0] * 2048
+    ctx.sr = 22050
+    ctx.bpm = 120
+    ctx.duration = 7.0
+    fn(ctx).save(cache)
+    return cache
 
 
 def run_render(job_id, audio_path, opts):
@@ -92,11 +144,38 @@ class Handler(BaseHTTPRequestHandler):
             for mod, prefix in ((looks_mod, "کلاسیک / Classic"),
                                 (looks_music, "موزیکال / Musical"),
                                 (templates_pack1, "حرفه‌ای / Pro"),
-                                (templates_pack2, "خاص / Special")):
+                                (templates_pack2, "خاص / Special"),
+                                (looks_graph, "گراف / Graph")):
                 for k, fn in mod.LOOKS.items():
                     desc = (fn.__doc__ or k).strip().splitlines()[0]
                     items.append({"id": k, "group": prefix, "desc": desc})
             self._send(200, json.dumps({"looks": items}).encode())
+        elif self.path == "/api/system":
+            encs = exportfmt.available_encoders()
+            self._send(200, json.dumps({
+                "version": VERSION,
+                "looks": list(ALL_LOOKS.keys()),
+                "encoders": encs,
+                "formats": list(exportfmt.FORMATS.keys()),
+                "preview": PREVIEW,
+            }).encode())
+        elif self.path.startswith("/api/lookthumb/"):
+            lid = self.path.rsplit("/", 1)[-1]
+            try:
+                p = render_lookthumb(lid)
+                if p and os.path.exists(p):
+                    with open(p, "rb") as f:
+                        self._send(200, f.read(), "image/png")
+                else:
+                    self._send(404, b'{"error":"unknown look"}')
+            except Exception as e:
+                self._send(500, json.dumps({"error": str(e)[:200]}).encode())
+        elif self.path.startswith("/api/beatmap/"):
+            jid = self.path.rsplit("/", 1)[-1]
+            j = JOBS.get(jid, {})
+            self._send(200, json.dumps({
+                "status": j.get("status", "unknown"),
+                "beatmap": j.get("beatmap")}).encode())
         elif self.path.startswith("/api/job/"):
             jid = self.path.split("/")[-1]
             self._send(200, json.dumps(JOBS.get(jid, {"status": "unknown"})).encode())
@@ -114,21 +193,73 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, b"{}")
 
     def do_POST(self):
-        if self.path == "/api/render":
+        if self.path in ("/api/render", "/api/preview"):
             ln = int(self.headers.get("Content-Length", 0))
-            req = json.loads(self.rfile.read(ln))
+            try:
+                req = json.loads(self.rfile.read(ln))
+            except Exception:
+                self._send(400, b'{"error":"invalid JSON"}')
+                return
+            if req.get("look") not in ALL_LOOKS:
+                self._send(400, json.dumps(
+                    {"error": f"unknown look '{req.get('look')}'"}).encode())
+                return
             jid = uuid.uuid4().hex[:10]
             audio = base64.b64decode(req["audio_b64"])
             ext = os.path.splitext(req.get("audio_name", "in.wav"))[1].lower() or ".wav"
             ap = os.path.join(OUT_DIR, f"in_{jid}{ext}")
             with open(ap, "wb") as f:
                 f.write(audio)
+            preview = self.path == "/api/preview"
+            if preview:
+                req["width"], req["height"], req["fps"] = (
+                    PREVIEW["width"], PREVIEW["height"], PREVIEW["fps"])
+                req["preset"] = "fast"
             req["duration"] = min(float(req.get("duration", 15)), 600)
-            JOBS[jid] = {"status": "queued", "progress": 5}
+            JOBS[jid] = {"status": "queued", "progress": 5, "preview": preview}
             threading.Thread(target=run_render, args=(jid, ap, req), daemon=True).start()
             self._send(200, json.dumps({"job_id": jid}).encode())
+        elif self.path == "/api/playlist":
+            ln = int(self.headers.get("Content-Length", 0))
+            try:
+                req = json.loads(self.rfile.read(ln))
+            except Exception:
+                self._send(400, b'{"error":"invalid JSON"}')
+                return
+            segs = req.get("segments") or []
+            if not segs or any(s.get("look") not in ALL_LOOKS for s in segs):
+                self._send(400, b'{"error":"segments with valid looks required"}')
+                return
+            jid = uuid.uuid4().hex[:10]
+            audio = base64.b64decode(req["audio_b64"])
+            ext = os.path.splitext(req.get("audio_name", "in.wav"))[1].lower() or ".wav"
+            ap = os.path.join(OUT_DIR, f"in_{jid}{ext}")
+            with open(ap, "wb") as f:
+                f.write(audio)
+            JOBS[jid] = {"status": "queued", "progress": 5}
+            threading.Thread(target=run_playlist, daemon=True, args=(
+                jid, ap, segs, req.get("format", "mp4"),
+                int(req.get("width", 1080)), int(req.get("height", 1920)),
+                int(req.get("fps", 60)), req.get("preset", "quality"))).start()
+            self._send(200, json.dumps({"job_id": jid}).encode())
+        elif self.path == "/api/analyze":
+            ln = int(self.headers.get("Content-Length", 0))
+            try:
+                req = json.loads(self.rfile.read(ln))
+            except Exception:
+                self._send(400, b'{"error":"invalid JSON"}')
+                return
+            jid = uuid.uuid4().hex[:10]
+            audio = base64.b64decode(req["audio_b64"])
+            ext = os.path.splitext(req.get("audio_name", "in.wav"))[1].lower() or ".wav"
+            ap = os.path.join(OUT_DIR, f"in_{jid}{ext}")
+            with open(ap, "wb") as f:
+                f.write(audio)
+            JOBS[jid] = {"status": "queued", "progress": 5}
+            threading.Thread(target=run_analyze, daemon=True, args=(jid, ap)).start()
+            self._send(200, json.dumps({"job_id": jid}).encode())
         else:
-            self._send(404, b"{}")
+            self._send(404, b'{"error":"not found"}')
 
 
 def main(port=8765):

@@ -24,9 +24,13 @@
       "app_ui.html",
       "app_server.py",
       "beatviz.py",
+      "beatmap.py",
+      "exportfmt.py",
+      "doctor.py",
       "midilib.py",
       "looks.py",
       "looks_music.py",
+      "looks_graph.py",
       "templates_pack1.py",
       "templates_pack2.py",
       "backend_env/**"

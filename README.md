@@ -14,6 +14,7 @@
 | 🎞 خروجی چندفرمته: MP4 (H.264/H.265)، WebM، GIF، WebP متحرک، ZIP فریم‌ها | Multi-format export: MP4 (H.264/H.265), WebM, GIF, animated WebP, PNG zip |
 | 🕐 سینک با کل آهنگ + سایدکار بیت‌مپ (.beatviz.json) | Full-song sync + beatmap sidecar (.beatviz.json) |
 | ✂️ تایم‌لاین برش (استایل اینستاگرام): انتخاب دقیق شروع/پایان روی ویوفرم | Instagram-style timeline trimmer: pick exact start/end on the waveform |
+| 🎬 پلی‌لیست چندسگمنتی + پیش‌نمایش سریع + نشانگر بیت روی تایم‌لاین | Multi-segment playlist + live low-res preview + beat markers on the timeline |
 | 🎹 پشتیبانی MIDI: نت‌های واقعی آهنگ رسم می‌شن | MIDI-aware: actual notes are drawn (drop a `.mid` next to the audio) |
 | 📱 خروجی ۱۶:۹ Full HD و ۹:۱۶ برای ریلز | 16:9 Full HD and 9:16 vertical export |
 | 💻 کاملاً آفلاین — هیچ آپلودی انجام نمی‌شه | 100% offline — nothing ever leaves your machine |

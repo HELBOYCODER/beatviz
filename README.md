@@ -8,10 +8,13 @@
 
 | فارسی | English |
 |---|---|
-| 🎨 ۵۸ قالب ویژوال در ۴ دسته (کلاسیک، موزیکال، حرفه‌ای، خاص) | 58 visual templates in 4 groups (Classic, Musical, Pro, Special) |
+| 🎨 ۶۱ قالب ویژوال در ۴ دسته (کلاسیک، موزیکال، حرفه‌ای، خاص) | 61 visual templates in 4 groups (Classic, Musical, Pro, Special) |
 | 🧠 تحلیل واقعی طیف فرکانسی (FFT) — نه ویوفرم ساده | Real FFT spectrum analysis — not a fake waveform |
+| ⚡ موتور رندر بدون لگ: تحلیل یک‌باره + استریم مستقیم فریم‌ها (بدون فایل PNG) | Lag-free engine: one-pass analysis + frames streamed straight to ffmpeg |
+| 🎞 خروجی چندفرمته: MP4 (H.264/H.265)، WebM، GIF، WebP متحرک، ZIP فریم‌ها | Multi-format export: MP4 (H.264/H.265), WebM, GIF, animated WebP, PNG zip |
+| 🕐 سینک با کل آهنگ + سایدکار بیت‌مپ (.beatviz.json) | Full-song sync + beatmap sidecar (.beatviz.json) |
+| ✂️ تایم‌لاین برش (استایل اینستاگرام): انتخاب دقیق شروع/پایان روی ویوفرم | Instagram-style timeline trimmer: pick exact start/end on the waveform |
 | 🎹 پشتیبانی MIDI: نت‌های واقعی آهنگ رسم می‌شن | MIDI-aware: actual notes are drawn (drop a `.mid` next to the audio) |
-| 🕐 تشخیص خودکار BPM از اسم فایل یا خود آهنگ | Auto BPM detection from filename or audio onsets |
 | 📱 خروجی ۱۶:۹ Full HD و ۹:۱۶ برای ریلز | 16:9 Full HD and 9:16 vertical export |
 | 💻 کاملاً آفلاین — هیچ آپلودی انجام نمی‌شه | 100% offline — nothing ever leaves your machine |
 
@@ -42,6 +45,25 @@
 ```bash
 bash install.sh    # نصب همه‌ی پیش‌نیازها (پایتون، pillow، ffmpeg) — قابل اجرای مکرر
 python3 doctor.py  # بررسی همه‌ی وابستگی‌ها + رندر فریم آزمایشی برای تک‌تک قالب‌ها + تست انکود ffmpeg
+```
+
+### 🎞 خروجی چندفرمته | Multi-format export
+
+```bash
+python3 beatviz.py song.wav --look beatbars --format mp4    # H.264 (پیش‌فرض)
+python3 beatviz.py song.wav --format h265                   # HEVC
+python3 beatviz.py song.wav --format webm                   # VP9 + Opus
+python3 beatviz.py song.wav --format gif                    # پالت بهینه
+python3 beatviz.py song.wav --format webp                   # WebP متحرک
+python3 beatviz.py song.wav --format png                    # ZIP فریم‌های PNG
+```
+
+### ✂️ برش و سینک کامل آهنگ | Trimming & full-song sync
+
+```bash
+python3 beatviz.py song.wav --start 12.5 --end 30            # بازه دقیق
+python3 beatviz.py song.wav --auto-trim                      # سینک با کل طول آهنگ
+python3 beatviz.py song.wav --beatmap                        # ساخت سایدکار .beatviz.json
 ```
 
 ### کیفیت رندر HD | HD render quality
